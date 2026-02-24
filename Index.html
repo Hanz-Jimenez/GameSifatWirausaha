@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GAME EDUKASI SOP</title>
+    <style>
+        :root { 
+            --primary: #2c3e50; 
+            --accent: #3498db; 
+            --bg: #f0f2f5; 
+            --success: #27ae60;
+        }
+
+        * { box-sizing: border-box; touch-action: none; } /* Mencegah scroll saat menggambar */
+
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: var(--bg); 
+            margin: 0; 
+            display: flex; 
+            justify-content: center; 
+            padding: 10px;
+        }
+
+        #game-container { 
+            width: 100%; 
+            max-width: 600px; 
+            background: white; 
+            padding: 15px; 
+            border-radius: 20px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
+            text-align: center; 
+        }
+
+        h2 { font-size: 1.2rem; color: var(--primary); margin-bottom: 10px; }
+
+        #instruction-box { 
+            background: #eef2f7; 
+            padding: 12px; 
+            border-left: 4px solid var(--accent); 
+            margin-bottom: 15px; 
+            text-align: left;
+            font-size: 0.9rem;
+        }
+
+        canvas { 
+            border: 2px solid #ddd; 
+            background: #ffffff; 
+            border-radius: 10px; 
+            width: 100%; /* Membuat canvas mengikuti lebar container */
+            max-width: 500px;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+
+        .controls { 
+            margin-top: 20px; 
+            display: flex; 
+            gap: 10px; 
+        }
+
+        button { 
+            flex: 1;
+            padding: 15px; 
+            cursor: pointer; 
+            border: none; 
+            border-radius: 10px; 
+            font-weight: bold; 
+            font-size: 1rem;
+            transition: transform 0.1s;
+        }
+
+        button:active { transform: scale(0.95); }
+
+        .btn-next { background: var(--accent); color: white; }
+        .btn-reset { background: #95a5a6; color: white; }
+
+        /* Overlay */
+        #overlay { 
+            display: none; 
+            position: fixed; 
+            top: 0; left: 0; 
+            width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.95); 
+            color: white; 
+            flex-direction: column; 
+            align-items: center; 
+            padding: 20px; 
+            z-index: 1000; 
+            overflow-y: auto; 
+        }
+
+        .result-grid { 
+            display: flex; 
+            flex-wrap: wrap; 
+            justify-content: center; 
+            gap: 15px; 
+            margin: 20px 0; 
+        }
+
+        .result-item { width: 45%; min-width: 140px; }
+        .result-item img { width: 100%; border: 2px solid white; border-radius: 8px; background: white; }
+        .result-item h4 { margin: 5px 0; font-size: 0.8rem; }
+
+        .sop-code { 
+            font-family: 'Courier New', Courier, monospace; 
+            color: #d35400; 
+            font-weight: bold; 
+            background: #fff; 
+            padding: 5px; 
+            display: inline-block; 
+            margin-top: 5px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <h2 id="stage-title">Tahap 1: Gambar Rumah (SOP)</h2>
+    <div id="instruction-box">
+        <p id="instruction-text" style="margin:0">Ikuti urutan titik berikut:</p>
+        <div id="sop-list" class="sop-code">
+            1. H3-K6-E6-H3 | 2. E6-E12-K12-K6 <br>
+            3. G12-G9-H9-H12 | 4. I8-J8-J9-I9-I8
+        </div>
+    </div>
+
+    <canvas id="gridCanvas"></canvas>
+
+    <div class="controls">
+        <button class="btn-reset" onclick="resetCanvas()">Hapus</button>
+        <button class="btn-next" onclick="handleFinishStage()">Selesai</button>
+    </div>
+</div>
+
+<div id="overlay">
+    <h2 id="eval-title">Evaluasi</h2>
+    <div class="result-grid" id="comparison-area"></div>
+    <div id="final-message"></div>
+    <button id="overlay-btn" class="btn-next" onclick="closeOverlay()" style="margin-top:20px; width: 200px;">Lanjut</button>
+</div>
+
+<script>
+    const canvas = document.getElementById('gridCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Grid settings
+    const gridSize = 16;
+    const spacing = 30;
+    const padding = 40;
+    const labels = "ABCDEFGHIJKLMNOP".split("");
+    
+    // Set internal resolution
+    canvas.width = (gridSize-1) * spacing + padding*2;
+    canvas.height = (gridSize-1) * spacing + padding*2;
+
+    let stage = 1;
+    let isDrawing = false;
+    let startDot = null;
+    let currentDot = null;
+    let lines = [];
+    let snapshots = [];
+
+    function drawGrid() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw Labels & Dots
+        for (let i = 0; i < gridSize; i++) {
+            ctx.fillStyle = "#bbb";
+            ctx.font = "12px Arial";
+            ctx.textAlign = "center";
+            // Horizontal Labels (A-P)
+            ctx.fillText(labels[i], padding + i*spacing, padding - 15);
+            // Vertical Labels (1-16)
+            ctx.fillText(i+1, padding - 20, padding + i*spacing + 5);
+
+            for (let j = 0; j < gridSize; j++) {
+                const dx = padding + i*spacing;
+                const dy = padding + j*spacing;
+                
+                ctx.beginPath();
+                ctx.arc(dx, dy, 2, 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+
+        // Draw saved lines
+        ctx.strokeStyle = "#2c3e50";
+        ctx.lineWidth = 3;
+        ctx.lineCap = "round";
+        lines.forEach(l => {
+            ctx.beginPath();
+            ctx.moveTo(l.x1, l.y1);
+            ctx.lineTo(l.x2, l.y2);
+            ctx.stroke();
+        });
+
+        // Highlight Hover/Active Dot
+        if(currentDot) {
+            ctx.beginPath();
+            ctx.arc(currentDot.x, currentDot.y, 8, 0, Math.PI*2);
+            ctx.fillStyle = "rgba(52, 152, 219, 0.3)";
+            ctx.fill();
+        }
+    }
+
+    function getDot(e) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        
+        // Handle touch or mouse
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        const x = (clientX - rect.left) * scaleX;
+        const y = (clientY - rect.top) * scaleY;
+
+        for (let i = 0; i < gridSize; i++) {
+            for (let j = 0; j < gridSize; j++) {
+                const dx = padding + i*spacing;
+                const dy = padding + j*spacing;
+                if (Math.hypot(x-dx, y-dy) < 20) return {x: dx, y: dy};
+            }
+        }
+        return null;
+    }
+
+    // Input Handlers
+    function startAction(e) {
+        const d = getDot(e);
+        if(d) {
+            isDrawing = true;
+            startDot = d;
+            currentDot = d;
+        }
+        drawGrid();
+    }
+
+    function moveAction(e) {
+        if(!isDrawing) return;
+        e.preventDefault();
+        const d = getDot(e);
+        currentDot = d || currentDot;
+        
+        drawGrid();
+        
+        // Garis bayangan saat tarik
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(52, 152, 219, 0.5)";
+        ctx.setLineDash([5, 5]);
+        ctx.moveTo(startDot.x, startDot.y);
+        ctx.lineTo((clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    function endAction(e) {
+        if(!isDrawing) return;
+        const d = currentDot;
+        if(d && (d.x !== startDot.x || d.y !== startDot.y)) {
+            lines.push({x1: startDot.x, y1: startDot.y, x2: d.x, y2: d.y});
+        }
+        isDrawing = false;
+        startDot = null;
+        currentDot = null;
+        drawGrid();
+    }
+
+    // Mouse Events
+    canvas.addEventListener('mousedown', startAction);
+    window.addEventListener('mousemove', moveAction);
+    window.addEventListener('mouseup', endAction);
+
+    // Touch Events
+    canvas.addEventListener('touchstart', startAction);
+    canvas.addEventListener('touchmove', moveAction, {passive: false});
+    canvas.addEventListener('touchend', endAction);
+
+    function resetCanvas() { lines = []; drawGrid(); }
+
+    function handleFinishStage() {
+        snapshots.push(canvas.toDataURL());
+        let msg = stage === 1 ? "Dengan SOP, garis Anda presisi." : "Tanpa SOP, kemungkinan besar hasil berbeda.";
+        showOverlay(`Hasil Tahap ${stage}`, msg);
+    }
+
+    function showOverlay(title, msg) {
+        document.getElementById('eval-title').innerText = title;
+        document.getElementById('final-message').innerHTML = `<p>${msg}</p>`;
+        document.getElementById('overlay').style.display = 'flex';
+        if (stage === 3) renderFinalComparison();
+    }
+
+    function closeOverlay() {
+        if (stage < 3) {
+            stage++;
+            document.getElementById('stage-title').innerText = `Tahap ${stage}: Tanpa SOP`;
+            document.getElementById('instruction-text').innerText = "Gambarlah bentuk rumah yang sama (Ingatan/Bebas)";
+            document.getElementById('sop-list').style.display = "none";
+            resetCanvas();
+            document.getElementById('overlay').style.display = 'none';
+        } else {
+            location.reload();
+        }
+    }
+
+    function renderFinalComparison() {
+        const area = document.getElementById('comparison-area');
+        area.innerHTML = "";
+        snapshots.forEach((src, i) => {
+            const div = document.createElement('div');
+            div.className = "result-item";
+            div.innerHTML = `<h4>Tahap ${i+1}</h4><img src="${src}">`;
+            area.appendChild(div);
+        });
+        document.getElementById('final-message').innerHTML = `
+            <h3 style="color:#f1c40f">KESIMPULAN</h3>
+            <p>Konsistensi industri lahir dari <b>Sistem</b>, bukan sekadar ingatan.</p>
+        `;
+        document.getElementById('overlay-btn').innerText = "Main Lagi";
+    }
+
+    drawGrid();
+</script>
+</body>
+</html>
